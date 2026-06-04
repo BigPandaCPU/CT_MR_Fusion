@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import SimpleITK as sitk
 import numpy as np
 import vtk
 from vtkmodules.vtkCommonTransforms import vtkTransform
@@ -221,36 +222,25 @@ def ICP(source_poly_data, target_poly_data):
     icp.SetTarget(target_poly_data)
     icp.GetLandmarkTransform().SetModeToRigidBody()
     icp.SetMaximumNumberOfIterations(100)
-    icp.StartByMatchingCentroidsOn()
+    #icp.StartByMatchingCentroidsOn()
     icp.Modified()
     icp.Update()
     icp_matrix = icp.GetMatrix()
     return icp_matrix
 
-if __name__ == "__main__":
-    src_stl_file = "E:/DeepData/CTMR/MR/NII/predictKneeMR_new/stl/LTibia_new.stl"
-    tar_stl_file = "E:/DeepData/CTMR/CT/stl/stl_311_br40_graphcut/LTibia_new.stl"
-    tar_cartilage_stl_file = "E:/DeepData/CTMR/CT/stl/LTibia_inside_cartilage.stl"
-    tar_cartilage_stl_file2 = "E:/DeepData/CTMR/CT/stl/LTibia_outside_cartilage.stl"
 
-    src_cartilage_file = "E:/DeepData/CTMR/MR/NII/predictKneeMR_new/stl/LTibia_inside_cartilage.stl"
-    src_cartilage_file2 = "E:/DeepData/CTMR/MR/NII/predictKneeMR_new/stl/LTibia_outside_cartilage.stl"
+def registration_two_stl(src_stl_file, tar_stl_file, num_points=5000):
+    """
 
-    source_points = getPointsFromSTL(src_stl_file, 5000)
-    target_points = getPointsFromSTL(tar_stl_file, 5000)
+    :return:
+    """
+    source_points = getPointsFromSTL(src_stl_file, num_points)
+    target_points = getPointsFromSTL(tar_stl_file, num_points)
 
     source_polydata = createPolyDataFromSTL(src_stl_file)
     target_polydata = createPolyDataFromSTL(tar_stl_file)
 
-    source_cartilage_polydata = createPolyDataFromSTL(src_cartilage_file)
-    source_cartilage_polydata2 = createPolyDataFromSTL(src_cartilage_file2)
-
     prealligned_matrix_vtk = prealigned_two_point_clouds(source_points, target_points, N=16)
-
-    # prealligned_matrix_vtk = vtk.vtkMatrix4x4()
-    # for i in range(4):
-    #     for j in range(4):
-    #         prealligned_matrix_vtk.SetElement(i, j, prealligned_matrix_np[i, j])
 
     prealligned_trans = vtkTransform()
     prealligned_trans.SetMatrix(prealligned_matrix_vtk)
@@ -260,50 +250,181 @@ if __name__ == "__main__":
     prealligned_transform.SetInputData(source_polydata)
     prealligned_transform.Update()
 
-
     icp_matrix_vtk = ICP(prealligned_transform.GetOutput(), target_polydata)
     final_matrix_vtk = vtk.vtkMatrix4x4()
     vtk.vtkMatrix4x4.Multiply4x4(icp_matrix_vtk, prealligned_matrix_vtk, final_matrix_vtk)
 
-    final_matrix_np = np.array(final_matrix_vtk.GetData()).reshape(4, 4)
+    #final_matrix_np = np.array(coarse_matrix_vtk.GetData()).reshape(4, 4)
+    return final_matrix_vtk, target_polydata
+
+def rotate_image_data(input_image, target_image, rot_matrix4x4):
+    """
+    """
+    ###############  方法1：AffineTransform    ##################
+    # rot_matrix = rot_matrix4x4[:3, :3]
+    # translation = rot_matrix4x4[0:3, 3]
+    # forward_transform = sitk.AffineTransform(3)
+    # forward_transform.SetMatrix(rot_matrix.flatten().tolist())
+    # forward_transform.SetTranslation(translation.tolist())
+    #
+    # # 3. 计算反向变换 (Fixed -> Moving)
+    # # 重采样管线需要从目标(Fixed)像素点去找源(Moving)像素点
+    # inverse_transform = forward_transform.GetInverse()
+    #
+    # # 4. 配置重采样器
+    # resampler = sitk.ResampleImageFilter()
+    #
+    # # 设定目标图像的空间几何信息（大小、分辨率、原点、方向）
+    # resampler.SetReferenceImage(target_image)
+    #
+    # # 设定变换关系与插值方式
+    # resampler.SetTransform(inverse_transform)
+    # resampler.SetInterpolator(sitk.sitkLinear)  # 线性插值，若为标签/Mask请用 sitkNearestNeighbor
+    #
+    # # 设定超出边界时的默认填充值（通常为背景色 0）
+    # resampler.SetDefaultPixelValue(0)
+    #
+    # # 5. 执行变换
+    # transformed_img = resampler.Execute(input_image)
+    # return transformed_img
+    ########################################################
+
+    ############  方法二： Eular3DTransform    ###############
+    rot_matrix3x3 = rot_matrix4x4[:3, :3]
+    matrix_flat = np.array(rot_matrix3x3).flatten().tolist()
+
+    transform = sitk.Euler3DTransform()
+    transform.SetMatrix(matrix_flat)
+
+    translation = rot_matrix4x4[0:3, 3]
+    transform.SetTranslation(translation)
+
+    inverse_transform = transform.GetInverse()
+
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetTransform(inverse_transform)
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetDefaultPixelValue(0)
+
+    resampler.SetOutputOrigin(target_image.GetOrigin())
+    resampler.SetOutputSpacing(target_image.GetSpacing())
+    resampler.SetOutputDirection(target_image.GetDirection())
+    resampler.SetSize(target_image.GetSize())
+
+    rotated_image = resampler.Execute(input_image)
+    ##########################################################
+    return rotated_image
 
 
-    source_prealligned_actor = createActorFromPolydata(prealligned_transform.GetOutput(), opacity=0.8, color='red')
+if __name__ == "__main__":
+    src_stl_file = "../data/MR/stl/LTibia.stl"
+    tar_stl_file = "../data/CT/stl/LTibia.stl"
+    tar_cartilage_stl_file = "../data/CT/stl/LTibia_cartilage.stl"
+    #tar_cartilage_stl_file2 = "../data/CT/stl/LTibia_outside_cartilage.stl"
+
+    src_cartilage_file = "../data/MR/stl/LTibia_inside_cartilage.stl"
+    src_cartilage_file2 = "../data/MR/stl/LTibia_outside_cartilage.stl"
+    src_cartilage_boundary_file = "../data/MR/stl/LTibia_cartilage_boundary_18.stl"
+
+    src_mr_file = r'..\data\MR\img.nii.gz'
+    tar_ct_file = r'..\data\CT\img.nii.gz'
+
+    src_mr_itk = sitk.ReadImage(src_mr_file)
+    tar_ct_itk = sitk.ReadImage(tar_ct_file)
 
 
 
-    #########################  final transform   ##############################
-    final_trans = vtkTransform()
-    final_trans.SetMatrix(final_matrix_vtk)
-    final_transform = vtkTransformPolyDataFilter()
-
-    final_transform.SetTransform(final_trans)
-    final_transform.SetInputData(source_cartilage_polydata)
-    final_transform.Update()
-    source_final_actor = createActorFromPolydata(final_transform.GetOutput(), opacity=0.9, color='green')
-    # saveSTLFileFromPolyData(tar_cartilage_stl_file, final_transform.GetOutput())
+    source_cartilage_polydata = createPolyDataFromSTL(src_cartilage_file)
+    source_cartilage_polydata2 = createPolyDataFromSTL(src_cartilage_file2)
+    source_cartilage_boundary_polydata = createPolyDataFromSTL(src_cartilage_boundary_file)
 
 
-    final_trans2 = vtkTransform()
-    final_trans2.SetMatrix(final_matrix_vtk)
-    final_transform2 = vtkTransformPolyDataFilter()
+    coarse_matrix_vtk, target_polydata = registration_two_stl(src_stl_file, tar_stl_file, 5000)
 
-    final_transform2.SetTransform(final_trans)
-    final_transform2.SetInputData(source_cartilage_polydata2)
-    final_transform2.Update()
-    source_final_actor2 = createActorFromPolydata(final_transform2.GetOutput(), opacity=0.9, color='green')
+
+    #########################  coarse transform   ##############################
+    coarse_trans = vtkTransform()
+    coarse_trans.SetMatrix(coarse_matrix_vtk)
+    coarse_transform = vtkTransformPolyDataFilter()
+
+    coarse_transform.SetTransform(coarse_trans)
+    coarse_transform.SetInputData(source_cartilage_boundary_polydata)
+    coarse_transform.Update()
+
+    # source_coarse_trans_actor = createActorFromPolydata(coarse_transform.GetOutput(), opacity=0.9, color='green')
+    # coarse_transform2 = vtkTransformPolyDataFilter()
+    # coarse_transform2.SetTransform(coarse_trans)
+    # coarse_transform2.SetInputData(source_cartilage_polydata2)
+    # coarse_transform2.Update()
+    # source_coarse_trans_actor2 = createActorFromPolydata(coarse_transform2.GetOutput(), opacity=0.9, color='green')
     # saveSTLFileFromPolyData(tar_cartilage_stl_file2, final_transform2.GetOutput())
     ############################################################################
 
+    # #############################  fine tune  ##############################
+    transform_cartilage_boundary_polydata = coarse_transform.GetOutput()
+    icp_matrix_vtk_fine_tune = ICP(transform_cartilage_boundary_polydata, target_polydata)
+
+    final_trans = vtkTransform()
+    final_trans.SetMatrix(icp_matrix_vtk_fine_tune)
+
+    final_transform = vtkTransformPolyDataFilter()
+    final_transform.SetTransform(final_trans)
+    final_transform.SetInputData(coarse_transform.GetOutput())
+    final_transform.Update()
+
+    # source_final_actor = createActorFromPolydata(final_transform.GetOutput(), opacity=1.0, color='blue')
+    # saveSTLFileFromPolyData(tar_cartilage_stl_file, final_transform.GetOutput())
+    # #######################################################################
+
+    ##############################  get final  matrix   #####################
+    final_matrix_vtk = vtk.vtkMatrix4x4()
+    vtk.vtkMatrix4x4.Multiply4x4(icp_matrix_vtk_fine_tune, coarse_matrix_vtk, final_matrix_vtk)
+    #########################################################################
+
+    #############################   rotate mr img   ##########################
+    final_matrix_vtk = vtk.vtkMatrix4x4()
+    vtk.vtkMatrix4x4.Multiply4x4(icp_matrix_vtk_fine_tune, coarse_matrix_vtk, final_matrix_vtk)
+    final_matrix_np = np.array(final_matrix_vtk.GetData()).reshape(4, 4)
+
+    rotated_mr_itk = rotate_image_data(src_mr_itk, tar_ct_itk, final_matrix_np)
+
+    save_mr_file = r'..\data\MR\img_rot_tibia.nii.gz'
+    sitk.WriteImage(rotated_mr_itk, save_mr_file)
+    ##########################################################################
+
+    #############################    show actors  ##############################
+
+    trans = vtkTransform()
+    trans.SetMatrix(final_matrix_vtk)
+
+    transform = vtkTransformPolyDataFilter()
+    transform.SetTransform(trans)
+    transform.SetInputData(source_cartilage_polydata)
+    transform.Update()
+
+    transform2 = vtkTransformPolyDataFilter()
+    transform2.SetTransform(trans)
+    transform2.SetInputData(source_cartilage_polydata2)
+    transform2.Update()
+
+    source_coarse_trans_actor = createActorFromPolydata(transform.GetOutput(), color='red')
+    source_coarse_trans_actor2 = createActorFromPolydata(transform2.GetOutput(), color='blue')
+
+    ##################   save transformed tibia cartilage   #################
+
+    append_filter = vtk.vtkAppendPolyData()
+    append_filter.AddInputData(transform.GetOutput())
+    append_filter.AddInputData(transform2.GetOutput())
+    append_filter.Update()  # 执行合并
+    combined_polydata = append_filter.GetOutput()
+    saveSTLFileFromPolyData(tar_cartilage_stl_file, combined_polydata)
+    #########################################################################
+
     all_actors = []
     target_actor = createActorFromPolydata(target_polydata, opacity=0.8)
-    source_actor = createActorFromPolydata(source_polydata, opacity=0.85, color='LightSteelBlue')
-
     all_actors.append(target_actor)
-    # all_actors.append(source_prealligned_actor)
-    all_actors.append(source_final_actor)
 
-    all_actors.append(source_final_actor2)
-
+    all_actors.append(source_coarse_trans_actor)
+    all_actors.append(source_coarse_trans_actor2)
     showActors(all_actors)
-
+    ############################################################################

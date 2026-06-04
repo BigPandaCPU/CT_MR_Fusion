@@ -39,18 +39,35 @@
 
 
 ## 融合结果展示
-### 股骨CT融合软骨效果
+### CT股骨软骨融合效果
 <img src="./png/CT_femur_carilage.png" height="400">
 <img src="./png/CT_femur_carilage2.png" height="400">
 
-### 胫骨CT融合软骨效果
+### CT胫骨软骨融合效果
 <img src="./png/CT_tibia_carilage.png" height="400">
 <img src="./png/CT_tibia_carilage2.png" height="400">
 
-### CT和MR融合效果
+### 股骨，CT和MR融合效果，
     融合采用的是MITK软件进行融合的。具体操作见MITK使用说明。
 <img src="./png/CT_MR_Fusion.png" height="400">
 <img src="./png/ct_mr_fusion.gif" height="400">
 
+### 胫骨， CT和MR融合效果
+<img src="./png/tibia_ct_mr_registration.png" height="400">
+<img src="./png/tibia_ct_mr_fusion.gif" height="400">
 
+## 注意事项
+1. CT的方向和MR的方向，默认都是相同的。
+    实际拍摄的时候CT一般是RAI(ITK-snap下， DICOM下是LPS)，而MR一般是ASL(ITK-snap下， DICOM下是PIR)
+    在调用covnert_nii2stl.py脚本的时候，需要将mask三维表面重建成stl，由于vtk.vtkImageImport()这个对
+    direction的支持不友好，没法设置方向。所以最简单的处理方法是，默认CT和MR图像的格式都是相同的。可以在融合
+    前，将MR的direction设置成宇CT的direction相同，其他的参数不用变。
+
+
+## 存在的问题
+1. 胫骨软骨进行ICP精细配准的时候，会出现胫骨近端和远端的配准精度不一样
+近端配准结果如下：  
+<img src="./png/tibia_jinduan.png" height="400">  
+远端配准结果如下：  
+<img src="./png/tibia_yuanduan.png" height="400">  
     

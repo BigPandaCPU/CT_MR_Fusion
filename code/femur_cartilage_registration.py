@@ -223,7 +223,7 @@ def ICP(source_poly_data, target_poly_data):
     icp.SetTarget(target_poly_data)
     icp.GetLandmarkTransform().SetModeToRigidBody()
     icp.SetMaximumNumberOfIterations(100)
-    icp.StartByMatchingCentroidsOn()
+    #icp.StartByMatchingCentroidsOn()
     icp.Modified()
     icp.Update()
     icp_matrix = icp.GetMatrix()
@@ -401,7 +401,7 @@ if __name__ == "__main__":
 
     src_stl_file = r'..\data\MR\stl\LFemur.stl'
     src_cartilage_file = r'..\data\MR\stl\LFemur_cartilage.stl'
-    src_cartilage_boundary_file = r'..\data\MR\stl\LFemur_cartilage_boundary.stl'
+    src_cartilage_boundary_file = r'..\data\MR\stl\LFemur_cartilage_boundary_18.stl'
 
     src_mr_file = r'..\data\MR\img.nii.gz'
     tar_ct_file = r'..\data\CT\img.nii.gz'
@@ -449,7 +449,7 @@ if __name__ == "__main__":
 
     rotated_mr_itk = rotate_image_data(src_mr_itk, tar_ct_itk, final_matrix_np)
 
-    save_mr_file = r'..\data\MR\img_rot_new2.nii.gz'
+    save_mr_file = r'..\data\MR\img_rot_femur.nii.gz'
     sitk.WriteImage(rotated_mr_itk, save_mr_file)
     ##########################################################################
 

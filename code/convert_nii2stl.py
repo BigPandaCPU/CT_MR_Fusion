@@ -29,7 +29,7 @@ def convertNII2STL(nii_file, save_stl_dir):
         cur_idx = np.where(img_array == cur_value)
         tmp_array[cur_idx] = cur_value
 
-        cur_polydata_normal, cur_polydata = createPolyDataNormalsFromArray(tmp_array, spacing, origin, get_largest_connect_region=True)
+        cur_polydata_normal, cur_polydata = createPolyDataNormalsFromArray(tmp_array, spacing, origin, get_largest_connect_region=False)
 
         featureEdges = vtk.vtkFeatureEdges()
         featureEdges.FeatureEdgesOff()
@@ -51,7 +51,7 @@ def convertNII2STL(nii_file, save_stl_dir):
 
 if __name__ == '__main__':
 
-    nii_file = r'..\data\MR\mask.nii.gz'
+    nii_file = r'..\data\MR\mask_femur_cartilage_boundary_18.nii.gz'
 
     save_stl_dir = r'..\data\MR\stl'
     os.makedirs(save_stl_dir, exist_ok=True)
